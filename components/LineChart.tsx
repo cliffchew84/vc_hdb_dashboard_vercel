@@ -1,6 +1,8 @@
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import * as d3 from 'd3';
 import { LineChartDataPoint, LineChartMetric } from '../types.ts';
+import { useD3Chart } from '../hooks/useD3Chart.ts';
+import { calculateXAxisTicks, positionD3Tooltip } from '../utils/d3helpers.ts';
 
 interface LineChartProps {
   data: LineChartDataPoint[];
@@ -12,8 +14,7 @@ interface LineChartProps {
 }
 
 const LineChart: React.FC<LineChartProps> = ({ data, xDomain, y1Domain, y2Domain, lineChartMetric, theme }) => {
-  const svgRef = useRef<SVGSVGElement | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const { containerRef, svgRef, dimensions } = useD3Chart();
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const chartElementsRef = useRef<{
     g?: d3.Selection<SVGGElement, unknown, null, undefined>;
@@ -26,26 +27,7 @@ const LineChart: React.FC<LineChartProps> = ({ data, xDomain, y1Domain, y2Domain
     tooltipFocus?: d3.Selection<SVGGElement, unknown, null, undefined>;
   }>({});
 
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const isDarkMode = theme === 'dark';
-
-  // Effect to handle responsive resizing of the chart
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const resizeObserver = new ResizeObserver(entries => {
-        if (entries && entries.length > 0 && entries[0].contentRect.width > 0) {
-            const { width, height } = entries[0].contentRect;
-            setDimensions({ width, height });
-        }
-    });
-    resizeObserver.observe(containerRef.current);
-    return () => {
-        if (containerRef.current) {
-            // eslint-disable-next-line react-hooks/exhaustive-deps
-            resizeObserver.unobserve(containerRef.current);
-        }
-    };
-  }, []);
 
   const themeColors = useMemo(() => (isDarkMode ? {
     y1: "#94a3b8", text: "#94a3b8", // slate-400, slate-400
@@ -160,21 +142,7 @@ const LineChart: React.FC<LineChartProps> = ({ data, xDomain, y1Domain, y2Domain
         .attr('x2', d => (x(d) ?? 0) - (x.paddingOuter() * x.step()));
 
     const numMonths = xDomain.length;
-    let tickValues: string[];
-
-    if (numMonths > 36) { // > 3 years, show every 6 months
-        tickValues = xDomain.filter((d, i) => i % 6 === 0);
-    } else if (numMonths > 24) { // > 2 years, show quarterly
-        tickValues = xDomain.filter((d, i) => i % 3 === 0);
-    } else if (numMonths > 12) { // > 1 year, show every other month
-        tickValues = xDomain.filter((d, i) => i % 2 === 0);
-    } else { // <= 1 year, show all months
-        tickValues = xDomain;
-    }
-    
-    if (numMonths > 0 && !tickValues.includes(xDomain[xDomain.length - 1])) {
-      tickValues.push(xDomain[xDomain.length - 1]);
-    }
+    const tickValues = calculateXAxisTicks(xDomain);
 
     const xAxisGenerator = d3.axisBottom(x).tickValues(tickValues).tickFormat((d: string) => {
         const date = new Date(`${d}-01T12:00:00Z`);
@@ -253,19 +221,6 @@ const LineChart: React.FC<LineChartProps> = ({ data, xDomain, y1Domain, y2Domain
     tooltipFocus?.select('.focus-line').attr('y1', 0).attr('y2', innerHeight).attr('stroke', themeColors.text);
     tooltipFocus?.select('.focus-circle-2').style('fill', currentMetricDetails.color);
 
-    const positionTooltip = (event: MouseEvent) => {
-        const tooltipNode = tooltip.node() as HTMLElement;
-        const containerNode = containerRef.current;
-        if (!tooltipNode || !containerNode) return;
-        const { width: tooltipWidth, height: tooltipHeight } = tooltipNode.getBoundingClientRect();
-        const containerRect = containerNode.getBoundingClientRect();
-        const offset = 15, margin = 10;
-        let left = Math.max(margin, Math.min(event.clientX - containerRect.left - tooltipWidth / 2, containerRect.width - tooltipWidth - margin));
-        let top = event.clientY - containerRect.top - tooltipHeight - offset;
-        if (top < margin) top = event.clientY - containerRect.top + offset;
-        tooltip.style('left', `${left}px`).style('top', `${top}px`);
-    };
-
     g.select<SVGRectElement>('.overlay').attr('width', innerWidth).attr('height', innerHeight)
       .on('mouseover', () => { tooltipFocus?.style('display', null); tooltip.style('opacity', 1).style('display', 'block'); })
       .on('mouseout', () => { tooltipFocus?.style('display', 'none'); tooltip.style('opacity', 0).style('display', 'none'); })
@@ -296,9 +251,9 @@ const LineChart: React.FC<LineChartProps> = ({ data, xDomain, y1Domain, y2Domain
             <span class="text-right font-semibold">${currentMetricDetails.tooltipFormatter(currentValue)}</span>
           </div>`
         );
-        positionTooltip(event);
+        positionD3Tooltip(event, tooltipRef, containerRef);
       });
-  }, [data, xDomain, y1Domain, y2Domain, themeColors, lineChartMetric, dimensions]);
+  }, [data, xDomain, y1Domain, y2Domain, themeColors, lineChartMetric, dimensions, containerRef, svgRef]);
 
   return (
     <div ref={containerRef} className="w-full h-full relative">

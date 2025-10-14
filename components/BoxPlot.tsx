@@ -1,7 +1,9 @@
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import * as d3 from 'd3';
 import { BoxPlotStats, Outlier, BoxPlotMetric } from '../types.ts';
 import { formatCurrency, formatPsf, parseRemainingLeaseToYears } from '../utils/formatters.ts';
+import { useD3Chart } from '../hooks/useD3Chart.ts';
+import { calculateXAxisTicks, positionD3Tooltip } from '../utils/d3helpers.ts';
 
 const SQM_TO_SQFT_CONVERSION = 10.7639;
 
@@ -20,8 +22,7 @@ const yAxisLabels: Record<BoxPlotMetric, string> = {
 };
 
 const BoxPlot: React.FC<BoxPlotProps> = ({ data, xDomain, yDomain, boxPlotMetric, theme }) => {
-  const svgRef = useRef<SVGSVGElement | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const { containerRef, svgRef, dimensions } = useD3Chart();
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const chartElementsRef = useRef<{ 
       g?: d3.Selection<SVGGElement, unknown, null, undefined>,
@@ -31,27 +32,8 @@ const BoxPlot: React.FC<BoxPlotProps> = ({ data, xDomain, yDomain, boxPlotMetric
       yearSeparators?: d3.Selection<SVGGElement, unknown, null, undefined>,
       noDataMessage?: d3.Selection<SVGTextElement, unknown, null, undefined>
   }>({});
-
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  
   const isDarkMode = theme === 'dark';
-
-  // Effect to handle responsive resizing of the chart
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const resizeObserver = new ResizeObserver(entries => {
-        if (entries && entries.length > 0 && entries[0].contentRect.width > 0) {
-            const { width, height } = entries[0].contentRect;
-            setDimensions({ width, height });
-        }
-    });
-    resizeObserver.observe(containerRef.current);
-    return () => {
-        if (containerRef.current) {
-            // eslint-disable-next-line react-hooks/exhaustive-deps
-            resizeObserver.unobserve(containerRef.current);
-        }
-    };
-  }, []);
 
   const themeColors = useMemo(() => (isDarkMode ? {
     stroke: "#94a3b8",      // slate-400
@@ -124,23 +106,8 @@ const BoxPlot: React.FC<BoxPlotProps> = ({ data, xDomain, yDomain, boxPlotMetric
     };
 
     const numMonths = xDomain.length;
-    let tickValues: string[];
-
-    if (numMonths > 36) { // > 3 years, show every 6 months
-        tickValues = xDomain.filter((d, i) => i % 6 === 0);
-    } else if (numMonths > 24) { // > 2 years, show quarterly
-        tickValues = xDomain.filter((d, i) => i % 3 === 0);
-    } else if (numMonths > 12) { // > 1 year, show every other month
-        tickValues = xDomain.filter((d, i) => i % 2 === 0);
-    } else { // <= 1 year, show all months
-        tickValues = xDomain;
-    }
-
-    // Ensure the last month is always a tick to clearly show the end of the range.
-    if (numMonths > 0 && !tickValues.includes(xDomain[xDomain.length - 1])) {
-      tickValues.push(xDomain[xDomain.length - 1]);
-    }
-
+    const tickValues = calculateXAxisTicks(xDomain);
+    
     const xAxisGenerator = d3.axisBottom(x).tickValues(tickValues).tickFormat((d: string) => {
         const date = new Date(`${d}-01T12:00:00Z`);
         // Always show year for January.
@@ -182,19 +149,6 @@ const BoxPlot: React.FC<BoxPlotProps> = ({ data, xDomain, yDomain, boxPlotMetric
     const tooltip = d3.select(tooltipRef.current);
     const boxWidth = x.bandwidth();
 
-    const positionTooltip = (event: MouseEvent) => {
-        const tooltipNode = tooltip.node() as HTMLElement;
-        const containerNode = containerRef.current;
-        if (!tooltipNode || !containerNode) return;
-        const { width: tooltipWidth, height: tooltipHeight } = tooltipNode.getBoundingClientRect();
-        const containerRect = containerNode.getBoundingClientRect();
-        const offset = 15, margin = 10;
-        let left = Math.max(margin, Math.min(event.clientX - containerRect.left - tooltipWidth / 2, containerRect.width - tooltipWidth - margin));
-        let top = event.clientY - containerRect.top - tooltipHeight - offset;
-        if (top < margin) top = event.clientY - containerRect.top + offset;
-        tooltip.style('left', `${left}px`).style('top', `${top}px`);
-    };
-    
     const boxplotGroups = g.selectAll<SVGGElement, BoxPlotStats>('g.boxplot').data(data, (d: any) => d.month);
     
     const enterGroups = boxplotGroups.enter().append('g').attr('class', 'boxplot')
@@ -280,7 +234,7 @@ const BoxPlot: React.FC<BoxPlotProps> = ({ data, xDomain, yDomain, boxPlotMetric
                         </div>
                      </div>`
                 );
-                positionTooltip(event);
+                positionD3Tooltip(event, tooltipRef, containerRef);
             })
             .on('mouseleave', function (event: MouseEvent) {
                 event.stopPropagation();
@@ -302,7 +256,7 @@ const BoxPlot: React.FC<BoxPlotProps> = ({ data, xDomain, yDomain, boxPlotMetric
             tooltip.style('opacity', 1).style('display', 'block');
         }).on('mousemove', function (event, d: BoxPlotStats) {
             tooltip.html(`<div class="font-bold text-center mb-2">${d3.timeFormat('%B %Y')(new Date(d.month))}</div><div class="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 text-xs"><span>Max:</span> <span class="text-right font-semibold">${valueFormatter(boxPlotMetric, d.max)}</span><span>Q3:</span> <span class="text-right font-semibold">${valueFormatter(boxPlotMetric, d.q3)}</span><span>Median:</span> <span class="text-right font-semibold">${valueFormatter(boxPlotMetric, d.median)}</span><span>Q1:</span> <span class="text-right font-semibold">${valueFormatter(boxPlotMetric, d.q1)}</span><span>Min:</span> <span class="text-right font-semibold">${valueFormatter(boxPlotMetric, d.min)}</span></div>`);
-            positionTooltip(event);
+            positionD3Tooltip(event, tooltipRef, containerRef);
         }).on('mouseleave', function () {
             const group = d3.select(this);
             group.select('.box').transition().duration(150).attr('fill', themeColors.fill).attr('stroke', themeColors.stroke);
@@ -310,7 +264,7 @@ const BoxPlot: React.FC<BoxPlotProps> = ({ data, xDomain, yDomain, boxPlotMetric
             tooltip.style('opacity', 0).style('display', 'none');
         });
 
-  }, [data, xDomain, yDomain, themeColors, boxPlotMetric, dimensions]);
+  }, [data, xDomain, yDomain, themeColors, boxPlotMetric, dimensions, containerRef, svgRef]);
 
   return (
     <div ref={containerRef} className="w-full h-full relative">
