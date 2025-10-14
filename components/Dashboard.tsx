@@ -146,13 +146,9 @@ const Dashboard: React.FC<DashboardProps> = ({
     return grossTransactionValueYDomain;
   }, [lineChartMetric, grossTransactionValueYDomain, medianPsfYDomain, medianPricePerLeaseYDomain, millionDollarPercentageYDomain]);
   
-  const stackedBarChartTitle = stackedBarChartMode === 'percentage'
-    ? '% of Sales by Price Category'
-    : '# of Sales by Price Category';
+  const stackedBarChartTitle = "Sales by Price Category";
     
-  const stackedBarChartDescription = stackedBarChartMode === 'percentage'
-    ? "This chart shows the monthly percentage breakdown of HDB resale transactions across different price brackets, with each bar summing to 100%."
-    : "This chart shows the absolute number of monthly HDB resale transactions, stacked by price category.";
+  const stackedBarChartDescription = "This chart shows the monthly breakdown of HDB resale transactions across different price brackets. Toggle between viewing data as a percentage of total sales or as an absolute count.";
 
 
   return (
