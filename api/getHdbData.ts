@@ -45,14 +45,16 @@ export default async function handler(
         }
 
         const [latestYear, latestMonth] = latestMonthString.split('-').map(Number);
-        const latestDate = new Date(latestYear, latestMonth - 1, 1);
+        // We get the latest date from the API, then add 3 months to it to create our end date for the fetch window.
+        // This helps overcome potential data publishing delays.
+        const fetchEndDate = new Date(latestYear, latestMonth - 1 + 3, 1);
         
         const allFetchedRecords: HdbResaleRecord[] = [];
         
         // Generate a list of all month strings to be fetched (e.g., "2024-07", "2024-06", ...)
         const monthsToFetch: string[] = [];
         for (let i = 0; i < TOTAL_MONTHS_TO_FETCH; i++) {
-            const targetDate = new Date(latestDate.getFullYear(), latestDate.getMonth() - i, 1);
+            const targetDate = new Date(fetchEndDate.getFullYear(), fetchEndDate.getMonth() - i, 1);
             const year = targetDate.getFullYear();
             const month = String(targetDate.getMonth() + 1).padStart(2, '0');
             monthsToFetch.push(`${year}-${month}`);
