@@ -22,7 +22,7 @@ interface SgGovApiResponse {
 
 const DATASET_ID = "f1765b54-a209-4718-8d38-a39237f502b3";
 const BASE_URL = "https://data.gov.sg/api/action/datastore_search";
-const CHUNK_SIZE = 2; // Fetch in chunks of 2 months
+const CHUNK_SIZE = 4; // Fetch in chunks of 4 months
 const API_DELAY_MS = 200; // Delay between chunks to be respectful to the server
 
 export default async function handler(
