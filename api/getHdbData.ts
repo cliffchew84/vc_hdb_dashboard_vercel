@@ -22,8 +22,7 @@ interface SgGovApiResponse {
 
 const DATASET_ID = "f1765b54-a209-4718-8d38-a39237f502b3";
 const BASE_URL = "https://data.gov.sg/api/action/datastore_search";
-const TOTAL_MONTHS_TO_FETCH = 24; // Fetch 2 years of data
-const CHUNK_SIZE = 4; // Fetch in chunks of 4 months
+const CHUNK_SIZE = 2; // Fetch in chunks of 2 months
 const API_DELAY_MS = 200; // Delay between chunks to be respectful to the server
 
 export default async function handler(
@@ -31,35 +30,21 @@ export default async function handler(
   res: VercelResponse,
 ) {
     try {
-        // First, fetch the single latest record to determine the most recent month of data available.
-        const latestRecordUrl = `${BASE_URL}?resource_id=${DATASET_ID}&limit=1&sort=_id%20desc&fields=month`;
-        const latestRecordResponse = await fetch(latestRecordUrl);
-        if (!latestRecordResponse.ok) {
-            throw new Error(`Failed to fetch latest record: ${latestRecordResponse.statusText}`);
-        }
-        const latestRecordData = await latestRecordResponse.json() as SgGovApiResponse;
-        const latestMonthString = latestRecordData.result.records[0]?.month;
+        const startDate = new Date(2024, 5, 1); // Month is 0-indexed, so 5 is June
+        const endDate = new Date(2025, 11, 1); // 11 is December
 
-        if (!latestMonthString) {
-            throw new Error('Could not determine the latest available month from the API.');
-        }
+        const monthsToFetch: string[] = [];
+        let currentDate = new Date(startDate);
 
-        const [latestYear, latestMonth] = latestMonthString.split('-').map(Number);
-        // We get the latest date from the API, then add 3 months to it to create our end date for the fetch window.
-        // This helps overcome potential data publishing delays.
-        const fetchEndDate = new Date(latestYear, latestMonth - 1 + 3, 1);
+        while (currentDate <= endDate) {
+            const year = currentDate.getFullYear();
+            const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+            monthsToFetch.push(`${year}-${month}`);
+            currentDate.setMonth(currentDate.getMonth() + 1);
+        }
         
         const allFetchedRecords: HdbResaleRecord[] = [];
         
-        // Generate a list of all month strings to be fetched (e.g., "2024-07", "2024-06", ...)
-        const monthsToFetch: string[] = [];
-        for (let i = 0; i < TOTAL_MONTHS_TO_FETCH; i++) {
-            const targetDate = new Date(fetchEndDate.getFullYear(), fetchEndDate.getMonth() - i, 1);
-            const year = targetDate.getFullYear();
-            const month = String(targetDate.getMonth() + 1).padStart(2, '0');
-            monthsToFetch.push(`${year}-${month}`);
-        }
-
         // Process the months in concurrent chunks
         for (let i = 0; i < monthsToFetch.length; i += CHUNK_SIZE) {
             const chunk = monthsToFetch.slice(i, i + CHUNK_SIZE);
