@@ -64,7 +64,8 @@ export const useHdbData = () => {
             yDomain: [0, 1000000] as [number, number],
             allLeaseYearsDomain: [0, 99] as [number, number],
         };
-        const allMonths = [...new Set(rawRecords.map(r => r.month))].sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+        // FIX: Explicitly type 'a' and 'b' as strings in the sort callback to resolve type inference issue.
+        const allMonths = [...new Set(rawRecords.map(r => r.month))].sort((a: string, b: string) => new Date(a).getTime() - new Date(b).getTime());
         return { 
             allMonthsXDomain: allMonths, 
             yDomain: calculateGlobalYDomain(rawRecords, boxPlotMetric),
@@ -91,12 +92,11 @@ export const useHdbData = () => {
     const filteredRecords = useMemo(() => {
         if (rawRecords.length === 0 || !selectedDateRange[0] || !selectedDateRange[1]) return [];
         
-        const startDate = new Date(selectedDateRange[0]);
-        const endDate = new Date(selectedDateRange[1]);
+        // Using string comparison is safer and avoids Date object timezone issues.
+        const [startDateStr, endDateStr] = selectedDateRange;
 
         return rawRecords.filter(r => {
-            const recordDate = new Date(r.month);
-            const isInDateRange = recordDate >= startDate && recordDate <= endDate;
+            const isInDateRange = r.month >= startDateStr && r.month <= endDateStr;
             const isTownMatch = selectedTowns.length === 0 || selectedTowns.includes(r.town);
             const isFlatTypeMatch = selectedFlatTypes.length === 0 || selectedFlatTypes.includes(r.flat_type);
 
