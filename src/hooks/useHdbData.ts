@@ -37,10 +37,10 @@ export const useHdbData = () => {
                 setRawRecords(data);
 
                 // Set initial filters from fetched data
-                const allMonths = [...new Set(data.map(r => r.month))].sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+                const allMonths = [...new Set(data.map(r => r.month))].sort((a: string, b: string) => new Date(a).getTime() - new Date(b).getTime());
                 if (allMonths.length > 0) {
                     const endDate = allMonths[allMonths.length - 1];
-                    const startIndex = Math.max(0, allMonths.length - 12); // Default to last 12 months
+                    const startIndex = Math.max(0, allMonths.length - 12);
                     const startDate = allMonths[startIndex];
                     setSelectedDateRange([startDate, endDate]);
                 }
