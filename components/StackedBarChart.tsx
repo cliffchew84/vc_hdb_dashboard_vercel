@@ -1,7 +1,9 @@
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import * as d3 from 'd3';
 import { StackedBarChartDataPoint, PRICE_CATEGORIES, PriceCategory, StackedBarChartMode } from '../types.ts';
 import { formatMonthYear } from '../utils/formatters.ts';
+import { useD3Chart } from '../hooks/useD3Chart.ts';
+import { calculateXAxisTicks, positionD3Tooltip } from '../utils/d3helpers.ts';
 
 interface StackedBarChartProps {
   data: StackedBarChartDataPoint[];
@@ -21,8 +23,7 @@ const colorMapping: Record<PriceCategory, string> = {
 };
 
 const StackedBarChart: React.FC<StackedBarChartProps> = ({ data, xDomain, theme, mode, yDomain }) => {
-  const svgRef = useRef<SVGSVGElement | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const { containerRef, svgRef, dimensions } = useD3Chart();
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const chartElementsRef = useRef<{
     g?: d3.Selection<SVGGElement, unknown, null, undefined>;
@@ -32,26 +33,7 @@ const StackedBarChart: React.FC<StackedBarChartProps> = ({ data, xDomain, theme,
     legend?: d3.Selection<SVGGElement, unknown, null, undefined>;
   }>({});
 
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const isDarkMode = theme === 'dark';
-
-  // Effect to handle responsive resizing of the chart
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const resizeObserver = new ResizeObserver(entries => {
-        if (entries && entries.length > 0 && entries[0].contentRect.width > 0) {
-            const { width, height } = entries[0].contentRect;
-            setDimensions({ width, height });
-        }
-    });
-    resizeObserver.observe(containerRef.current);
-    return () => {
-        if (containerRef.current) {
-            // eslint-disable-next-line react-hooks/exhaustive-deps
-            resizeObserver.unobserve(containerRef.current);
-        }
-    };
-  }, []);
 
   const processedData = useMemo(() => {
     if (mode === 'percentage') {
@@ -113,15 +95,7 @@ const StackedBarChart: React.FC<StackedBarChartProps> = ({ data, xDomain, theme,
     
     // Axes & Grid
     const numMonths = xDomain.length;
-    let tickValues: string[];
-    if (numMonths > 36) tickValues = xDomain.filter((_, i) => i % 6 === 0);
-    else if (numMonths > 24) tickValues = xDomain.filter((_, i) => i % 3 === 0);
-    else if (numMonths > 12) tickValues = xDomain.filter((_, i) => i % 2 === 0);
-    else tickValues = xDomain;
-
-    if (numMonths > 0 && !tickValues.includes(xDomain[xDomain.length - 1])) {
-        tickValues.push(xDomain[xDomain.length - 1]);
-    }
+    const tickValues = calculateXAxisTicks(xDomain);
     
     const xAxisGenerator = d3.axisBottom(x).tickValues(tickValues).tickFormat(d => {
         const date = new Date(`${d}-01T12:00:00Z`);
@@ -171,27 +145,7 @@ const StackedBarChart: React.FC<StackedBarChartProps> = ({ data, xDomain, theme,
       
     // Tooltip
     const tooltip = d3.select(tooltipRef.current);
-    const positionTooltip = (event: MouseEvent) => {
-        const tooltipNode = tooltip.node() as HTMLElement;
-        const containerNode = containerRef.current;
-        if (!tooltipNode || !containerNode) return;
-        
-        const { width: tooltipWidth, height: tooltipHeight } = tooltipNode.getBoundingClientRect();
-        const containerRect = containerNode.getBoundingClientRect();
-        const offset = 15;
-        const margin = 8;
-
-        let left = event.clientX - containerRect.left - tooltipWidth / 2;
-        left = Math.max(margin, Math.min(left, containerRect.width - tooltipWidth - margin));
-
-        const spaceAbove = event.clientY - containerRect.top;
-        let top = (spaceAbove > tooltipHeight + offset) 
-            ? event.clientY - containerRect.top - tooltipHeight - offset
-            : event.clientY - containerRect.top + offset;
-        
-        tooltip.style('left', `${left}px`).style('top', `${top}px`);
-    };
-
+    
     // Bars
     g.selectAll('.bar-series').data(series, (d:any) => d.key)
         .join('g').attr('class', 'bar-series')
@@ -212,7 +166,6 @@ const StackedBarChart: React.FC<StackedBarChartProps> = ({ data, xDomain, theme,
             d3.select(this).style('filter', 'brightness(1.2)');
         })
         .on('mousemove', function(event, d) {
-            // FIX: Cast 'this' to SVGRectElement to address TypeScript error regarding 'parentNode' property.
             const seriesDatum = d3.select((this as SVGRectElement).parentNode as SVGGElement).datum() as d3.Series<any, PriceCategory>;
             const hoveredCategory = seriesDatum.key;
             const originalMonthData = data.find(item => item.month === d.data.month);
@@ -239,7 +192,7 @@ const StackedBarChart: React.FC<StackedBarChartProps> = ({ data, xDomain, theme,
             }
             tooltipContent += `</div>`;
             tooltip.html(tooltipContent);
-            positionTooltip(event);
+            positionD3Tooltip(event, tooltipRef, containerRef);
         })
         .on('mouseleave', function() {
             tooltip.style('opacity', 0).style('display', 'none');
@@ -249,12 +202,10 @@ const StackedBarChart: React.FC<StackedBarChartProps> = ({ data, xDomain, theme,
         .attr('y', d => y(d[1]))
         .attr('height', d => Math.max(0, y(d[0]) - y(d[1])))
         .attr('rx', function() {
-            // FIX: Cast 'this' to SVGRectElement to address TypeScript error regarding 'parentNode' property.
             const seriesDatum = d3.select((this as SVGRectElement).parentNode as SVGGElement).datum() as d3.Series<any, PriceCategory>;
             return seriesDatum.key === '>=1m' ? 4 : 0;
         })
         .attr('ry', function() {
-            // FIX: Cast 'this' to SVGRectElement to address TypeScript error regarding 'parentNode' property.
             const seriesDatum = d3.select((this as SVGRectElement).parentNode as SVGGElement).datum() as d3.Series<any, PriceCategory>;
             return seriesDatum.key === '>=1m' ? 4 : 0;
         });
@@ -292,7 +243,7 @@ const StackedBarChart: React.FC<StackedBarChartProps> = ({ data, xDomain, theme,
     const totalLegendWidth = cumulativeWidth > 0 ? cumulativeWidth - legendPadding : 0;
     legend?.attr('transform', `translate(${(width - totalLegendWidth) / 2}, ${margin.top / 2 - 5})`);
 
-  }, [data, processedData, xDomain, isDarkMode, dimensions, mode, yDomain]);
+  }, [data, processedData, xDomain, isDarkMode, dimensions, mode, yDomain, containerRef, svgRef]);
 
   return (
     <div ref={containerRef} className="w-full h-full relative">

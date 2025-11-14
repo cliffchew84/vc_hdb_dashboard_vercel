@@ -22,61 +22,66 @@ interface SgGovApiResponse {
 
 const DATASET_ID = "f1765b54-a209-4718-8d38-a39237f502b3";
 const BASE_URL = "https://data.gov.sg/api/action/datastore_search";
-const TOTAL_MONTHS_TO_FETCH = 12;
-const API_DELAY_MS = 150; // Delay between API calls to be respectful to the server
+const CHUNK_SIZE = 4; // Fetch in chunks of 4 months
+const API_DELAY_MS = 200; // Delay between chunks to be respectful to the server
 
 export default async function handler(
   _req: VercelRequest,
   res: VercelResponse,
 ) {
     try {
-        const latestRecordUrl = `${BASE_URL}?resource_id=${DATASET_ID}&limit=1&sort=_id%20desc&fields=month`;
-        const latestRecordResponse = await fetch(latestRecordUrl);
-        if (!latestRecordResponse.ok) {
-            throw new Error(`Failed to fetch latest record: ${latestRecordResponse.statusText}`);
-        }
-        const latestRecordData = await latestRecordResponse.json() as SgGovApiResponse;
-        const latestMonthString = latestRecordData.result.records[0]?.month;
+        const startDate = new Date(2024, 5, 1); // Month is 0-indexed, so 5 is June
+        const endDate = new Date(2025, 11, 1); // 11 is December
 
-        if (!latestMonthString) {
-            throw new Error('Could not determine the latest available month from the API.');
-        }
+        const monthsToFetch: string[] = [];
+        let currentDate = new Date(startDate);
 
-        const [latestYear, latestMonth] = latestMonthString.split('-').map(Number);
-        const latestDate = new Date(latestYear, latestMonth - 1, 1);
+        while (currentDate <= endDate) {
+            const year = currentDate.getFullYear();
+            const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+            monthsToFetch.push(`${year}-${month}`);
+            currentDate.setMonth(currentDate.getMonth() + 1);
+        }
         
         const allFetchedRecords: HdbResaleRecord[] = [];
         
-        for (let i = TOTAL_MONTHS_TO_FETCH - 1; i >= 0; i--) {
-            const targetDate = new Date(latestDate.getFullYear(), latestDate.getMonth() - i, 1);
-            const year = targetDate.getFullYear();
-            const month = String(targetDate.getMonth() + 1).padStart(2, '0');
-            const monthString = `${year}-${month}`;
-            
-            try {
+        // Process the months in concurrent chunks
+        for (let i = 0; i < monthsToFetch.length; i += CHUNK_SIZE) {
+            const chunk = monthsToFetch.slice(i, i + CHUNK_SIZE);
+
+            // Create an array of fetch promises for the current chunk
+            const promises = chunk.map(monthString => {
                 const filters = encodeURIComponent(JSON.stringify({ month: monthString }));
                 const fields = "month,resale_price,flat_type,town,floor_area_sqm,remaining_lease";
                 const url = `${BASE_URL}?resource_id=${DATASET_ID}&filters=${filters}&limit=10000&fields=${fields}`;
 
-                const response = await fetch(url);
-                if (!response.ok) {
-                  console.warn(`Could not fetch data for ${monthString}. Status: ${response.status}`);
-                  continue;
+                return fetch(url)
+                    .then(response => {
+                        if (!response.ok) {
+                            console.warn(`Could not fetch data for ${monthString}. Status: ${response.status}`);
+                            return null; // Return null for failed requests to not break Promise.all
+                        }
+                        return response.json() as Promise<SgGovApiResponse>;
+                    })
+                    .catch(monthError => {
+                        console.error(`An error occurred while fetching data for ${monthString}:`, monthError);
+                        return null; // Return null on network error
+                    });
+            });
+            
+            // Wait for all fetches in the current chunk to complete
+            const chunkResults = await Promise.all(promises);
+
+            // Process the results from the chunk
+            for (const apiData of chunkResults) {
+                if (apiData && apiData.success && apiData.result.records.length > 0) {
+                    allFetchedRecords.push(...apiData.result.records);
                 }
-                
-                const apiData = await response.json() as SgGovApiResponse;
-                
-                if (apiData.success && apiData.result.records.length > 0) {
-                  allFetchedRecords.push(...apiData.result.records);
-                } else {
-                  console.warn(`No records found for ${monthString}.`);
-                }
-            } catch (monthError) {
-                console.error(`An error occurred while fetching data for ${monthString}:`, monthError);
             }
 
-            if (i > 0) {
-              await new Promise(resolve => setTimeout(resolve, API_DELAY_MS));
+            // If there are more chunks to process, wait for a short period
+            if (i + CHUNK_SIZE < monthsToFetch.length) {
+                await new Promise(resolve => setTimeout(resolve, API_DELAY_MS));
             }
         }
         

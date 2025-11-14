@@ -178,7 +178,6 @@ const App: React.FC = () => {
     medianPsfYDomain: hdbData.medianPsfYDomain,
     medianPricePerLeaseYDomain: hdbData.medianPricePerLeaseYDomain,
     millionDollarPercentageYDomain: hdbData.millionDollarPercentageYDomain,
-    // FIX: Add missing properties to dashboardProps to match the DashboardProps interface.
     stackedBarChartYDomain: hdbData.stackedBarChartYDomain,
     boxPlotMetric: hdbData.boxPlotMetric,
     setBoxPlotMetric: hdbData.setBoxPlotMetric,
