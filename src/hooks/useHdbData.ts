@@ -12,15 +12,6 @@ import {
     calculateStackedBarChartData,
 } from '../utils/dataProcessor.ts';
 
-// Helper to check if two dates are on the same calendar day.
-const isSameDay = (date1: Date, date2: Date): boolean => {
-    return date1.getFullYear() === date2.getFullYear() &&
-           date1.getMonth() === date2.getMonth() &&
-           date1.getDate() === date2.getDate();
-};
-
-const HDB_DATA_CACHE_KEY = 'hdbResaleDataCache';
-
 // This custom hook encapsulates all logic for fetching, caching, and processing HDB data.
 export const useHdbData = () => {
     const [rawRecords, setRawRecords] = useState<HdbResaleRecord[]>([]);
@@ -37,43 +28,9 @@ export const useHdbData = () => {
     const [lineChartMetric, setLineChartMetric] = useState<LineChartMetric>('grossTransactionValue');
     const [stackedBarChartMode, setStackedBarChartMode] = useState<StackedBarChartMode>('percentage');
 
-    // Effect to fetch initial raw data on component mount, with caching.
+    // Effect to fetch initial raw data on component mount.
     useEffect(() => {
         const loadData = async () => {
-            // 1. Check for valid cache
-            try {
-                const cachedDataJSON = localStorage.getItem(HDB_DATA_CACHE_KEY);
-                if (cachedDataJSON) {
-                    const cachedData = JSON.parse(cachedDataJSON);
-                    const cacheDate = new Date(cachedData.timestamp);
-                    const today = new Date();
-
-                    if (cachedData.records && isSameDay(cacheDate, today)) {
-                        setLoadingMessage('Loading data from local cache...');
-                        setRawRecords(cachedData.records);
-
-                        // Set initial filters from cached data
-                        const allMonths = [...new Set((cachedData.records as HdbResaleRecord[]).map(r => r.month))].sort((a: string, b: string) => new Date(a).getTime() - new Date(b).getTime());
-                        if (allMonths.length > 0) {
-                            const endDate = allMonths[allMonths.length - 1];
-                            const startIndex = Math.max(0, allMonths.length - 12);
-                            const startDate = allMonths[startIndex];
-                            setSelectedDateRange([startDate, endDate]);
-                        }
-                        const leaseDomain = calculateGlobalLeaseDomain(cachedData.records);
-                        setSelectedLeaseRange(leaseDomain);
-                        
-                        setLoading(false);
-                        setLoadingMessage('');
-                        return; // Exit early
-                    }
-                }
-            } catch (e) {
-                console.error("Failed to load or parse cached data, fetching new data.", e);
-                localStorage.removeItem(HDB_DATA_CACHE_KEY); // Clear corrupted cache
-            }
-
-            // 2. Fetch from our serverless API if cache is invalid
             try {
                 setLoadingMessage('Fetching latest data from server...');
                 const data = await fetchAllHdbData();
@@ -89,13 +46,6 @@ export const useHdbData = () => {
                 }
                 const leaseDomain = calculateGlobalLeaseDomain(data);
                 setSelectedLeaseRange(leaseDomain);
-
-                // 3. Update cache
-                const newCache = {
-                    timestamp: new Date().toISOString(),
-                    records: data,
-                };
-                localStorage.setItem(HDB_DATA_CACHE_KEY, JSON.stringify(newCache));
 
             } catch (e) {
                 setError(e instanceof Error ? e.message : 'An unknown error occurred.');
@@ -114,6 +64,7 @@ export const useHdbData = () => {
             yDomain: [0, 1000000] as [number, number],
             allLeaseYearsDomain: [0, 99] as [number, number],
         };
+        // FIX: Explicitly type 'a' and 'b' as strings in the sort callback to resolve type inference issue.
         const allMonths = [...new Set(rawRecords.map(r => r.month))].sort((a: string, b: string) => new Date(a).getTime() - new Date(b).getTime());
         return { 
             allMonthsXDomain: allMonths, 
@@ -141,12 +92,11 @@ export const useHdbData = () => {
     const filteredRecords = useMemo(() => {
         if (rawRecords.length === 0 || !selectedDateRange[0] || !selectedDateRange[1]) return [];
         
-        const startDate = new Date(selectedDateRange[0]);
-        const endDate = new Date(selectedDateRange[1]);
+        // Using string comparison is safer and avoids Date object timezone issues.
+        const [startDateStr, endDateStr] = selectedDateRange;
 
         return rawRecords.filter(r => {
-            const recordDate = new Date(r.month);
-            const isInDateRange = recordDate >= startDate && recordDate <= endDate;
+            const isInDateRange = r.month >= startDateStr && r.month <= endDateStr;
             const isTownMatch = selectedTowns.length === 0 || selectedTowns.includes(r.town);
             const isFlatTypeMatch = selectedFlatTypes.length === 0 || selectedFlatTypes.includes(r.flat_type);
 
