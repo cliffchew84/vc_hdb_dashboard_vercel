@@ -75,13 +75,13 @@ const DateRangeSelector: React.FC<DateRangeSelectorProps> = ({ allMonths, select
     const handleMonthSelect = (year: string, monthIndex: number) => {
         const monthString = `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
         if (openPicker === 'start') {
-            const newStartDate = new Date(monthString);
-            const currentEndDate = new Date(selectedRange[1]);
-            onChange([monthString, newStartDate > currentEndDate ? monthString : selectedRange[1]]);
-        } else {
-            const newEndDate = new Date(monthString);
-            const currentStartDate = new Date(selectedRange[0]);
-            onChange([newEndDate < currentStartDate ? monthString : selectedRange[0], monthString]);
+            const currentEndDateStr = selectedRange[1];
+            // If new start date is after current end date, collapse range to the new start date.
+            onChange([monthString, monthString > currentEndDateStr ? monthString : currentEndDateStr]);
+        } else { // openPicker === 'end'
+            const currentStartDateStr = selectedRange[0];
+            // If new end date is before current start date, collapse range to the new end date.
+            onChange([monthString < currentStartDateStr ? monthString : currentStartDateStr, monthString]);
         }
         setOpenPicker(null);
     };
@@ -112,7 +112,7 @@ const DateRangeSelector: React.FC<DateRangeSelectorProps> = ({ allMonths, select
     const renderPicker = () => {
         if (!openPicker) return null;
         
-        const [startRangeDate, endRangeDate] = [new Date(selectedRange[0]), new Date(selectedRange[1])];
+        const [startRangeStr, endRangeStr] = selectedRange;
 
         return (
             <div ref={scrollContainerRef} className="absolute top-full mt-2 w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-lg z-10 max-h-72 overflow-y-auto">
@@ -128,15 +128,16 @@ const DateRangeSelector: React.FC<DateRangeSelectorProps> = ({ allMonths, select
                                     return <div key={name} className="p-1.5 text-center text-xs rounded-md" />;
                                 }
                                 
-                                const monthDate = new Date(parseInt(year), originalMonthIndex);
                                 const monthString = `${year}-${String(originalMonthIndex + 1).padStart(2, '0')}`;
+                                
                                 const isSelected = (
-                                    (openPicker === 'start' && monthDate.getTime() === startRangeDate.getTime()) ||
-                                    (openPicker === 'end' && monthDate.getTime() === endRangeDate.getTime())
+                                    (openPicker === 'start' && monthString === startRangeStr) ||
+                                    (openPicker === 'end' && monthString === endRangeStr)
                                 );
+
                                 const isDisabled = (
-                                    (openPicker === 'start' && monthDate > endRangeDate) ||
-                                    (openPicker === 'end' && monthDate < startRangeDate)
+                                    (openPicker === 'start' && monthString > endRangeStr) ||
+                                    (openPicker === 'end' && monthString < startRangeStr)
                                 );
                                 
                                 const buttonClasses = `
